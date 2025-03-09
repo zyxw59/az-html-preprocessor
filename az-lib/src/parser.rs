@@ -7,6 +7,10 @@ slotmap::new_key_type! {
     pub struct SpanRef;
 }
 
+pub mod footnote;
+
+pub const PREFIX: &str = "az";
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 struct Span {
     pub start: usize,
@@ -98,7 +102,7 @@ impl ProcessorDriver {
     ) {
         let span_ref = self.output.spans.insert(span);
         self.processors.iter_mut().find_map(|p| {
-            filter(&mut **p, &self.output[span], span_ref).map(|mut v| v.visit(&mut self.output))
+            filter(&mut **p, &self.output[span], span_ref).map(|v| v.visit(&mut self.output))
         });
     }
 }
@@ -128,6 +132,24 @@ impl Buffer {
         Some(self.spans.insert(joined))
     }
 
+    pub fn outer_and_inner_spans(
+        &mut self,
+        first: SpanRef,
+        second: SpanRef,
+    ) -> Option<(SpanRef, SpanRef)> {
+        let first = self.spans.get(first)?;
+        let second = self.spans.get(second)?;
+        let outer = Span {
+            start: first.start,
+            end: second.end,
+        };
+        let inner = Span {
+            start: first.end,
+            end: second.start,
+        };
+        Some((self.spans.insert(outer), self.spans.insert(inner)))
+    }
+
     fn len(&self) -> usize {
         self.buffer.len()
     }
@@ -145,6 +167,15 @@ impl ops::Index<Span> for Buffer {
 
     fn index(&self, span: Span) -> &Self::Output {
         &self.buffer[span.start..span.end]
+    }
+}
+
+impl ops::Index<SpanRef> for Buffer {
+    type Output = str;
+
+    fn index(&self, span: SpanRef) -> &Self::Output {
+        let span = self.spans[span];
+        &self[span]
     }
 }
 
@@ -189,13 +220,7 @@ impl fmt::Write for InsertWriter<'_> {
 }
 
 pub trait Visitor {
-    fn visit(&mut self, output: &mut Buffer);
-}
-
-impl<T: Visitor + ?Sized> Visitor for Box<T> {
-    fn visit(&mut self, output: &mut Buffer) {
-        (**self).visit(output)
-    }
+    fn visit(self: Box<Self>, output: &mut Buffer);
 }
 
 pub trait Processor {
