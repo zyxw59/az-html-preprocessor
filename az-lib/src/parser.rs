@@ -84,28 +84,22 @@ impl ProcessorDriver {
             match kind {
                 ElementEnd::Open => self.handle_tag(span, Processor::start_tag),
                 ElementEnd::Close(..) => self.handle_tag(span, Processor::end_tag),
-                ElementEnd::Empty => todo!(),
+                ElementEnd::Empty => self.handle_tag(span, Processor::empty_tag),
             }
         }
         Ok(())
     }
 
-    #[allow(clippy::type_complexity)]
-    fn handle_tag(
-        &mut self,
-        span: Span,
-        filter: for<'p> fn(
-            &'p mut (dyn Processor + 'static),
-            &str,
-            SpanRef,
-        ) -> Option<Box<dyn Visitor + 'p>>,
-    ) {
+    fn handle_tag(&mut self, span: Span, filter: ProcessorFn) {
         let span_ref = self.output.spans.insert(span);
         self.processors.iter_mut().find_map(|p| {
             filter(&mut **p, &self.output[span], span_ref).map(|v| v.visit(&mut self.output))
         });
     }
 }
+
+type ProcessorFn =
+    for<'p> fn(&'p mut (dyn Processor + 'static), &str, SpanRef) -> Option<Box<dyn Visitor + 'p>>;
 
 // TODO: replace this with our own error type
 pub type Error = htmlparser::Error;
@@ -225,7 +219,10 @@ pub trait Visitor {
 
 pub trait Processor {
     fn start_tag(&mut self, tag_contents: &str, tag_span: SpanRef)
-        -> Option<Box<dyn Visitor + '_>>;
+    -> Option<Box<dyn Visitor + '_>>;
 
     fn end_tag(&mut self, tag_contents: &str, tag_span: SpanRef) -> Option<Box<dyn Visitor + '_>>;
+
+    fn empty_tag(&mut self, tag_contents: &str, tag_span: SpanRef)
+    -> Option<Box<dyn Visitor + '_>>;
 }
