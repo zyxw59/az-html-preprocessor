@@ -7,6 +7,7 @@ use super::{Buffer, PREFIX, Processor, SpanRef, Visitor};
 const NOTE_TAG: &str = "footnote";
 const REF_TAG: &str = "footnote-ref";
 
+#[derive(Default, Debug)]
 pub struct FootnoteProcessor {
     next_index: usize,
     stack: Vec<Pending>,
@@ -15,6 +16,10 @@ pub struct FootnoteProcessor {
 }
 
 impl FootnoteProcessor {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     fn is_element_start(token: Token, tag_name: &str) -> bool {
         matches!(
             token,
@@ -180,6 +185,7 @@ impl Visitor for RefVisitor {
     }
 }
 
+#[derive(Debug)]
 struct Pending {
     opening_span: SpanRef,
     name: Option<Rc<str>>,
@@ -189,6 +195,7 @@ struct Pending {
     ref_class: Box<str>,
 }
 
+#[derive(Debug)]
 struct Footnote {
     name: Option<Rc<str>>,
     index: usize,
