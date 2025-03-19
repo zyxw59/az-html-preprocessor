@@ -220,8 +220,8 @@ pub struct InsertWriter<'a> {
 
 impl Drop for InsertWriter<'_> {
     fn drop(&mut self) {
-        let old_len = self.buffer.len();
-        let new_len = self.replace_span.len();
+        let old_len = self.replace_span.len();
+        let new_len = self.buffer.len();
         if old_len != new_len {
             self.output.spans.retain(|_, span| {
                 if self.replace_span.contains(&span.start) || self.replace_span.contains(&span.end)

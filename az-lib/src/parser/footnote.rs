@@ -244,3 +244,28 @@ impl fmt::Display for FootnoteRef {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        super::{Buffer, Processor, Span},
+        FootnoteProcessor,
+    };
+
+    #[test]
+    fn awawa() {
+        const EMPTY_SPAN: Span = Span { start: 0, end: 0 };
+        let mut buffer = Buffer::default();
+        let mut processor = FootnoteProcessor::new();
+        let empty_span = buffer.spans.insert(EMPTY_SPAN);
+
+        assert!(processor.start_tag("<az:footnote>", empty_span).is_none());
+        assert_eq!(processor.stack.len(), 1);
+        let visitor = processor.end_tag("</az:footnote>", empty_span).unwrap();
+        visitor.visit(&mut buffer);
+        assert_eq!(
+            buffer.buffer,
+            r##"<a id="footnote-ref-0" href="#footnote-0" class="footnote-ref ">0</a>"##
+        );
+    }
+}
