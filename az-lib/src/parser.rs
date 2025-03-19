@@ -54,7 +54,7 @@ impl ProcessorDriver {
     }
 
     pub fn parse(&mut self, input: &str) -> Result<(), Error> {
-        use htmlparser::{ElementEnd, Token, Tokenizer};
+        use htmlparser::{ElementEnd, StrSpan, Token, Tokenizer};
         fn find_map_token<'t, T>(
             tokens: &mut Tokenizer<'t>,
             mut map: impl FnMut(Token<'t>) -> Option<T>,
@@ -64,42 +64,81 @@ impl ProcessorDriver {
                 .transpose()
         }
 
+        struct StartTag<'a> {
+            span: StrSpan<'a>,
+            prefix: StrSpan<'a>,
+            local: StrSpan<'a>,
+            is_closed: bool,
+        }
+
+        impl StartTag<'_> {
+            fn new(token: Token<'_>) -> Option<StartTag<'_>> {
+                match token {
+                    Token::ElementStart {
+                        prefix,
+                        local,
+                        span,
+                    } => Some(StartTag {
+                        span,
+                        prefix,
+                        local,
+                        is_closed: false,
+                    }),
+                    Token::ElementEnd {
+                        end: ElementEnd::Close(prefix, local),
+                        span,
+                    } => Some(StartTag {
+                        span,
+                        prefix,
+                        local,
+                        is_closed: true,
+                    }),
+                    _ => None,
+                }
+            }
+        }
+
+        type ProcessorFn = for<'p> fn(
+            &'p mut (dyn Processor + 'static),
+            &str,
+            SpanRef,
+        ) -> Option<Box<dyn Visitor + 'p>>;
+
         let mut tokens = htmlparser::Tokenizer::from_fragment(input, 0..input.len());
         let mut last = 0;
-        while let Some(input_start) = find_map_token(&mut tokens, |tok| match tok {
-            Token::ElementStart { span, .. } => Some(span.start()),
-            _ => None,
-        })? {
+
+        while let Some(start) = find_map_token(&mut tokens, StartTag::new)? {
+            let input_start = start.span.start();
             self.output.buffer.push_str(&input[last..input_start]);
-            let (input_end, kind) = find_map_token(&mut tokens, |tok| match tok {
-                Token::ElementEnd { end, span } => Some((span.end(), end)),
-                _ => None,
-            })?
-            .expect("TODO: return an error for no element end");
+            let (input_end, filter): (_, ProcessorFn) = if start.is_closed {
+                (start.span.end(), Processor::end_tag)
+            } else {
+                find_map_token::<(_, ProcessorFn)>(&mut tokens, |tok| match tok {
+                    Token::ElementEnd {
+                        end: ElementEnd::Open,
+                        span,
+                    } => Some((span.end(), Processor::start_tag)),
+                    Token::ElementEnd {
+                        end: ElementEnd::Empty,
+                        span,
+                    } => Some((span.end(), Processor::empty_tag)),
+                    _ => None,
+                })?
+                .expect("TODO: return an error for no element end")
+            };
             let start = self.output.len();
             self.output.buffer.push_str(&input[input_start..input_end]);
             let end = self.output.len();
             last = input_end;
             let span = Span { start, end };
-            match kind {
-                ElementEnd::Open => self.handle_tag(span, Processor::start_tag),
-                ElementEnd::Close(..) => self.handle_tag(span, Processor::end_tag),
-                ElementEnd::Empty => self.handle_tag(span, Processor::empty_tag),
-            }
+            let span_ref = self.output.spans.insert(span);
+            self.processors.iter_mut().find_map(|p| {
+                filter(&mut **p, &self.output[span], span_ref).map(|v| v.visit(&mut self.output))
+            });
         }
         Ok(())
     }
-
-    fn handle_tag(&mut self, span: Span, filter: ProcessorFn) {
-        let span_ref = self.output.spans.insert(span);
-        self.processors.iter_mut().find_map(|p| {
-            filter(&mut **p, &self.output[span], span_ref).map(|v| v.visit(&mut self.output))
-        });
-    }
 }
-
-type ProcessorFn =
-    for<'p> fn(&'p mut (dyn Processor + 'static), &str, SpanRef) -> Option<Box<dyn Visitor + 'p>>;
 
 // TODO: replace this with our own error type
 pub type Error = htmlparser::Error;
