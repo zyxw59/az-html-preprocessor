@@ -98,20 +98,17 @@ impl ProcessorDriver {
             }
         }
 
-        type ProcessorFn = for<'p> fn(
-            &'p mut (dyn Processor + 'static),
-            &str,
-            SpanRef,
-        ) -> Option<Box<dyn Visitor + 'p>>;
+        type ProcessorFn =
+            for<'p> fn(&'p mut (dyn Processor + 'static), Tag<'_>) -> Option<Box<dyn Visitor + 'p>>;
 
         let mut tokens = htmlparser::Tokenizer::from_fragment(input, 0..input.len());
         let mut last = 0;
 
-        while let Some(start) = find_map_token(&mut tokens, StartTag::new)? {
-            let input_start = start.span.start();
+        while let Some(start_tag) = find_map_token(&mut tokens, StartTag::new)? {
+            let input_start = start_tag.span.start();
             self.output.buffer.push_str(&input[last..input_start]);
-            let (input_end, filter): (_, ProcessorFn) = if start.is_closed {
-                (start.span.end(), Processor::end_tag)
+            let (input_end, filter): (_, ProcessorFn) = if start_tag.is_closed {
+                (start_tag.span.end(), Processor::end_tag)
             } else {
                 find_map_token::<(_, ProcessorFn)>(&mut tokens, |tok| match tok {
                     Token::ElementEnd {
@@ -133,7 +130,16 @@ impl ProcessorDriver {
             let span = Span { start, end };
             let span_ref = self.output.spans.insert(span);
             self.processors.iter_mut().find_map(|p| {
-                filter(&mut **p, &self.output[span], span_ref).map(|v| v.visit(&mut self.output))
+                filter(
+                    &mut **p,
+                    Tag {
+                        contents: &self.output[span],
+                        prefix: &start_tag.prefix,
+                        local: &start_tag.local,
+                        span: span_ref,
+                    },
+                )
+                .map(|v| v.visit(&mut self.output))
             });
         }
         Ok(())
@@ -256,12 +262,18 @@ pub trait Visitor {
     fn visit(self: Box<Self>, output: &mut Buffer);
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Tag<'a> {
+    pub contents: &'a str,
+    pub prefix: &'a str,
+    pub local: &'a str,
+    pub span: SpanRef,
+}
+
 pub trait Processor {
-    fn start_tag(&mut self, tag_contents: &str, tag_span: SpanRef)
-    -> Option<Box<dyn Visitor + '_>>;
+    fn start_tag(&mut self, tag: Tag<'_>) -> Option<Box<dyn Visitor + '_>>;
 
-    fn end_tag(&mut self, tag_contents: &str, tag_span: SpanRef) -> Option<Box<dyn Visitor + '_>>;
+    fn end_tag(&mut self, tag: Tag<'_>) -> Option<Box<dyn Visitor + '_>>;
 
-    fn empty_tag(&mut self, tag_contents: &str, tag_span: SpanRef)
-    -> Option<Box<dyn Visitor + '_>>;
+    fn empty_tag(&mut self, tag: Tag<'_>) -> Option<Box<dyn Visitor + '_>>;
 }

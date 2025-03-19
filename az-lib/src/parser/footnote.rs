@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, fmt, rc::Rc};
 
-use htmlparser::{ElementEnd, Token};
+use htmlparser::Token;
 
-use super::{Buffer, PREFIX, Processor, SpanRef, Visitor};
+use super::{Buffer, PREFIX, Processor, SpanRef, Tag, Visitor};
 
 const NOTE_TAG: &str = "footnote";
 const REF_TAG: &str = "footnote-ref";
@@ -18,17 +18,6 @@ pub struct FootnoteProcessor {
 impl FootnoteProcessor {
     pub fn new() -> Self {
         Default::default()
-    }
-
-    fn is_element_start(token: Token, tag_name: &str) -> bool {
-        matches!(
-            token,
-            Token::ElementStart { prefix, local, .. } if prefix == PREFIX && local == tag_name
-        )
-    }
-
-    fn match_element_start(tokens: &mut htmlparser::Tokenizer, tag_name: &str) -> Option<()> {
-        Self::is_element_start(tokens.next()?.ok()?, tag_name).then_some(())
     }
 
     fn metadata(&mut self, name: Option<Rc<str>>) -> Metadata {
@@ -49,17 +38,13 @@ impl FootnoteProcessor {
 }
 
 impl Processor for FootnoteProcessor {
-    fn start_tag(
-        &mut self,
-        tag_contents: &str,
-        opening_span: SpanRef,
-    ) -> Option<Box<dyn Visitor + '_>> {
-        let mut tokens = htmlparser::Tokenizer::from_fragment(tag_contents, 0..tag_contents.len());
-        match tokens.next() {
-            Some(Ok(Token::ElementStart { prefix, local, .. }))
-                if prefix == PREFIX && local == NOTE_TAG => {}
-            _ => return None,
+    fn start_tag(&mut self, tag: Tag) -> Option<Box<dyn Visitor + '_>> {
+        if tag.prefix != PREFIX || tag.local != NOTE_TAG {
+            return None;
         }
+        let mut tokens = htmlparser::Tokenizer::from_fragment(tag.contents, 0..tag.contents.len());
+        // skip the start tag token
+        tokens.next();
         let mut name: Option<Rc<str>> = None;
         let mut class = Vec::new();
         let mut ref_class = Vec::new();
@@ -74,7 +59,7 @@ impl Processor for FootnoteProcessor {
         }
         let metadata = self.metadata(name.clone());
         let footnote = Pending {
-            opening_span,
+            opening_span: tag.span,
             name,
             index: metadata.index,
             ref_number: metadata.refcount,
@@ -86,30 +71,25 @@ impl Processor for FootnoteProcessor {
         None
     }
 
-    fn end_tag(&mut self, tag_contents: &str, end_span: SpanRef) -> Option<Box<dyn Visitor + '_>> {
-        let mut tokens = htmlparser::Tokenizer::from_fragment(tag_contents, 0..tag_contents.len());
-        match tokens.next() {
-            Some(Ok(Token::ElementEnd {
-                end: ElementEnd::Close(prefix, local),
-                ..
-            })) if prefix == PREFIX && local == NOTE_TAG => {}
-            _ => return None,
+    fn end_tag(&mut self, tag: Tag) -> Option<Box<dyn Visitor + '_>> {
+        if tag.prefix != PREFIX || tag.local != NOTE_TAG {
+            return None;
         }
         let pending = self.stack.pop()?;
         Some(Box::new(EndVisitor {
             processor: self,
             pending,
-            end_span,
+            end_span: tag.span,
         }))
     }
 
-    fn empty_tag(
-        &mut self,
-        tag_contents: &str,
-        tag_span: SpanRef,
-    ) -> Option<Box<dyn Visitor + '_>> {
-        let mut tokens = htmlparser::Tokenizer::from_fragment(tag_contents, 0..tag_contents.len());
-        Self::match_element_start(&mut tokens, REF_TAG)?;
+    fn empty_tag(&mut self, tag: Tag) -> Option<Box<dyn Visitor + '_>> {
+        if tag.prefix != PREFIX || tag.local != REF_TAG {
+            return None;
+        }
+        let mut tokens = htmlparser::Tokenizer::from_fragment(tag.contents, 0..tag.contents.len());
+        // skip the start tag token
+        tokens.next();
         let mut name: Option<Rc<str>> = None;
         let mut ref_class = Vec::new();
         while let Some(Ok(Token::Attribute { local, value, .. })) = tokens.next() {
@@ -130,7 +110,7 @@ impl Processor for FootnoteProcessor {
                 index: metadata.index,
                 class: ref_class.join(" ").into(),
             },
-            tag_span,
+            tag_span: tag.span,
         }))
     }
 }
@@ -248,8 +228,8 @@ impl fmt::Display for FootnoteRef {
 #[cfg(test)]
 mod tests {
     use super::{
-        super::{Buffer, Processor, Span},
-        FootnoteProcessor,
+        super::{Buffer, PREFIX, Processor, Span, Tag},
+        FootnoteProcessor, NOTE_TAG,
     };
 
     #[test]
@@ -259,9 +239,21 @@ mod tests {
         let mut processor = FootnoteProcessor::new();
         let empty_span = buffer.spans.insert(EMPTY_SPAN);
 
-        assert!(processor.start_tag("<az:footnote>", empty_span).is_none());
+        let start_tag = Tag {
+            contents: "<az:footnote>",
+            prefix: PREFIX,
+            local: NOTE_TAG,
+            span: empty_span,
+        };
+        assert!(processor.start_tag(start_tag).is_none());
         assert_eq!(processor.stack.len(), 1);
-        let visitor = processor.end_tag("</az:footnote>", empty_span).unwrap();
+        let end_tag = Tag {
+            contents: "</az:footnote>",
+            prefix: PREFIX,
+            local: NOTE_TAG,
+            span: empty_span,
+        };
+        let visitor = processor.end_tag(end_tag).unwrap();
         visitor.visit(&mut buffer);
         assert_eq!(
             buffer.buffer,
