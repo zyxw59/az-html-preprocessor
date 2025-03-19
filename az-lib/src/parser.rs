@@ -144,6 +144,13 @@ impl ProcessorDriver {
         }
         Ok(())
     }
+
+    pub fn finish(mut self) -> Buffer {
+        for processor in self.processors {
+            processor.finish(&mut self.output);
+        }
+        self.output
+    }
 }
 
 // TODO: replace this with our own error type
@@ -276,6 +283,8 @@ pub trait Processor {
     fn end_tag(&mut self, tag: Tag<'_>) -> Option<Box<dyn Visitor + '_>>;
 
     fn empty_tag(&mut self, tag: Tag<'_>) -> Option<Box<dyn Visitor + '_>>;
+
+    fn finish(self: Box<Self>, output: &mut Buffer);
 }
 
 #[cfg(test)]

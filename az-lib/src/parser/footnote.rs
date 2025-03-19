@@ -7,6 +7,9 @@ use super::{Buffer, PREFIX, Processor, SpanRef, Tag, Visitor};
 const NOTE_TAG: &str = "footnote";
 const REF_TAG: &str = "footnote-ref";
 
+const EXPECT_SPAN: &str = "span should be valid";
+const EXPECT_WRITE: &str = "writing to buffer should not fail";
+
 #[derive(Default, Debug)]
 pub struct FootnoteProcessor {
     next_index: usize,
@@ -34,6 +37,44 @@ impl FootnoteProcessor {
             self.next_index += 1;
             Metadata { index, refcount: 0 }
         }
+    }
+
+    fn finish_inner(self, output: &mut Buffer) -> fmt::Result {
+        use std::fmt::Write;
+
+        writeln!(output, r#"<footer><ol class="footnote-container">"#)?;
+        let mut last = 0;
+        for (idx, footnote) in self.footnotes {
+            write!(output, r#"<li id="footnote-{}""#, footnote.id())?;
+            if idx != last + 1 {
+                write!(output, r#" value="{idx}""#)?;
+            }
+            write!(output, r#"class="footnote {}">"#, footnote.class)?;
+            write!(output, "{}", footnote.text)?;
+            if let Some(name) = footnote.name {
+                let refcount = self
+                    .by_name
+                    .get(&name)
+                    .map(|metadata| metadata.refcount)
+                    .unwrap_or(0);
+                for i in 0..refcount {
+                    write!(
+                        output,
+                        r##"<a href="#footnote-ref-{name}-{i}" class="footnote-return-link"></a>"##
+                    )?;
+                }
+            } else {
+                write!(
+                    output,
+                    r##"<a href="#footnote-ref-{}" class="footnote-return-link"></a>"##,
+                    footnote.index,
+                )?;
+            }
+            writeln!(output, "</li>")?;
+            last = idx;
+        }
+        writeln!(output, r#"</ol></footer>"#)?;
+        Ok(())
     }
 }
 
@@ -113,6 +154,10 @@ impl Processor for FootnoteProcessor {
             tag_span: tag.span,
         }))
     }
+
+    fn finish(self: Box<Self>, output: &mut Buffer) {
+        self.finish_inner(output).expect(EXPECT_WRITE);
+    }
 }
 
 struct EndVisitor<'a> {
@@ -149,10 +194,10 @@ impl Visitor for EndVisitor<'_> {
         };
         use std::fmt::Write;
         write!(
-            output.replace_span(outer).expect("span should be valid"),
+            output.replace_span(outer).expect(EXPECT_SPAN),
             "{footnote_ref}"
         )
-        .expect("writing footnote ref should not fail");
+        .expect(EXPECT_WRITE);
     }
 }
 
@@ -165,13 +210,11 @@ impl Visitor for RefVisitor {
     fn visit(self: Box<Self>, output: &mut Buffer) {
         use std::fmt::Write;
         write!(
-            output
-                .replace_span(self.tag_span)
-                .expect("span should be valid"),
+            output.replace_span(self.tag_span).expect(EXPECT_SPAN),
             "{}",
             self.footnote_ref
         )
-        .expect("writing footnote ref should not fail");
+        .expect(EXPECT_WRITE);
     }
 }
 
@@ -191,6 +234,16 @@ struct Footnote {
     index: usize,
     class: Box<str>,
     text: Box<str>,
+}
+
+impl Footnote {
+    fn id(&self) -> &dyn fmt::Display {
+        if let Some(name) = &self.name {
+            name
+        } else {
+            &self.index
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
