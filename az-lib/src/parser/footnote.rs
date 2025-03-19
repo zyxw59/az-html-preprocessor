@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt, rc::Rc};
 
-use htmlparser::Token;
+use htmlparser::{ElementEnd, Token};
 
 use super::{Buffer, PREFIX, Processor, SpanRef, Visitor};
 
@@ -55,7 +55,11 @@ impl Processor for FootnoteProcessor {
         opening_span: SpanRef,
     ) -> Option<Box<dyn Visitor + '_>> {
         let mut tokens = htmlparser::Tokenizer::from_fragment(tag_contents, 0..tag_contents.len());
-        Self::match_element_start(&mut tokens, NOTE_TAG)?;
+        match tokens.next() {
+            Some(Ok(Token::ElementStart { prefix, local, .. }))
+                if prefix == PREFIX && local == NOTE_TAG => {}
+            _ => return None,
+        }
         let mut name: Option<Rc<str>> = None;
         let mut class = Vec::new();
         let mut ref_class = Vec::new();
@@ -84,7 +88,13 @@ impl Processor for FootnoteProcessor {
 
     fn end_tag(&mut self, tag_contents: &str, end_span: SpanRef) -> Option<Box<dyn Visitor + '_>> {
         let mut tokens = htmlparser::Tokenizer::from_fragment(tag_contents, 0..tag_contents.len());
-        Self::match_element_start(&mut tokens, NOTE_TAG)?;
+        match tokens.next() {
+            Some(Ok(Token::ElementEnd {
+                end: ElementEnd::Close(prefix, local),
+                ..
+            })) if prefix == PREFIX && local == NOTE_TAG => {}
+            _ => return None,
+        }
         let pending = self.stack.pop()?;
         Some(Box::new(EndVisitor {
             processor: self,
