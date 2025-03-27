@@ -49,7 +49,7 @@ impl FootnoteProcessor {
             if idx != last + 1 {
                 write!(output, r#" value="{idx}""#)?;
             }
-            write!(output, r#"class="footnote {}">"#, footnote.class)?;
+            write!(output, r#" class="footnote {}">"#, footnote.class)?;
             write!(output, "{}", footnote.text)?;
             if let Some(name) = footnote.name {
                 let refcount = self

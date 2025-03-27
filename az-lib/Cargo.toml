@@ -6,3 +6,7 @@ edition = "2024"
 [dependencies]
 htmlparser = "0.2.1"
 slotmap = "1.0.7"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
+test_each_file = "0.3.4"

@@ -142,6 +142,7 @@ impl ProcessorDriver {
                 .map(|v| v.visit(&mut self.output))
             });
         }
+        self.output.buffer.push_str(&input[last..]);
         Ok(())
     }
 
@@ -289,22 +290,15 @@ pub trait Processor {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn footnotes() {
+    test_each_file::test_each_file! {
+        for ["az", "html"] in "./az-lib/resources/test/parser" => test_files
+    }
+
+    fn test_files([input, expected]: [&str; 2]) {
         let footnote_processor = Box::new(super::footnote::FootnoteProcessor::new());
         let mut driver = super::ProcessorDriver::new(vec![footnote_processor]);
-        driver
-            .parse(
-                r#"<az:footnote></az:footnote>
-<az:footnote-ref name="foo" />
-<az:footnote name="foo"></az:footnote>"#,
-            )
-            .unwrap();
-        assert_eq!(
-            driver.output.buffer,
-            r##"<a id="footnote-ref-0" href="#footnote-0" class="footnote-ref ">0</a>
-<a id="footnote-ref-foo-1" href="#footnote-foo" class="footnote-ref ">1</a>
-<a id="footnote-ref-foo-2" href="#footnote-foo" class="footnote-ref ">1</a>"##
-        );
+        driver.parse(input).unwrap();
+        let actual = driver.finish();
+        pretty_assertions::assert_eq!(actual.buffer, expected);
     }
 }
