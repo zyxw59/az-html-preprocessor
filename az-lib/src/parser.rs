@@ -11,6 +11,9 @@ pub mod footnote;
 
 pub const PREFIX: &str = "az";
 
+/// Tags that do not necessarily contain valid HTML (such as unescaped `>`)
+const NON_HTML_TAGS: &[&str] = &["script", "style"];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 struct Span {
     pub start: usize,
@@ -107,6 +110,7 @@ impl ProcessorDriver {
         while let Some(start_tag) = find_map_token(&mut tokens, StartTag::new)? {
             let input_start = start_tag.span.start();
             self.output.buffer.push_str(&input[last..input_start]);
+            let mut skip_to_end_tag = false;
             let (input_end, filter): (_, ProcessorFn) = if start_tag.is_closed {
                 (start_tag.span.end(), Processor::end_tag)
             } else {
@@ -114,7 +118,11 @@ impl ProcessorDriver {
                     Token::ElementEnd {
                         end: ElementEnd::Open,
                         span,
-                    } => Some((span.end(), Processor::start_tag)),
+                    } => {
+                        skip_to_end_tag = start_tag.prefix.is_empty()
+                            && NON_HTML_TAGS.contains(&start_tag.local.as_str());
+                        Some((span.end(), Processor::start_tag))
+                    }
                     Token::ElementEnd {
                         end: ElementEnd::Empty,
                         span,
@@ -141,6 +149,12 @@ impl ProcessorDriver {
                 )
                 .map(|v| v.visit(&mut self.output))
             });
+            if skip_to_end_tag {
+                let end_tag = format!("</{}>", start_tag.local);
+                if let Some(end_position) = input.find(&end_tag) {
+                    tokens = htmlparser::Tokenizer::from_fragment(input, end_position..input.len());
+                }
+            }
         }
         self.output.buffer.push_str(&input[last..]);
         Ok(())

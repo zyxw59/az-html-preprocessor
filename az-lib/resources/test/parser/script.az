@@ -1,0 +1,11 @@
+<script>
+let em = 42;
+let p = 1;
+if (em <p) {
+  console.log("<em>", em);
+}
+// <az:footnote>this would be the 0th footnote if it was processed</az:footnote>
+<!-- blah blah blah
+</script>
+<az:footnote>here is a footnote--></az:footnote>
+
