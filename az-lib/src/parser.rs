@@ -8,6 +8,7 @@ slotmap::new_key_type! {
 }
 
 pub mod footnote;
+pub mod highlighting;
 
 pub const PREFIX: &str = "az";
 
@@ -310,7 +311,8 @@ mod tests {
 
     fn test_files([input, expected]: [&str; 2]) {
         let footnote_processor = Box::new(super::footnote::FootnoteProcessor::new());
-        let mut driver = super::ProcessorDriver::new(vec![footnote_processor]);
+        let code_processor = Box::new(super::highlighting::HighlightProcessor::new_test());
+        let mut driver = super::ProcessorDriver::new(vec![footnote_processor, code_processor]);
         driver.parse(input).unwrap();
         let actual = driver.finish();
         pretty_assertions::assert_eq!(actual.buffer, expected);
