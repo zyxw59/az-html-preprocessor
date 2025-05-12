@@ -1,0 +1,1 @@
+edition = "2024" # since rustfmt can't read Cargo.toml and cargo fmt can't format just one file
