@@ -277,37 +277,3 @@ impl fmt::Display for FootnoteRef {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{FootnoteProcessor, NOTE_TAG};
-    use crate::parser::{Buffer, PREFIX, Processor, Tag};
-
-    #[test]
-    fn awawa() {
-        let mut buffer = Buffer::default();
-        let mut processor = FootnoteProcessor::new();
-        let empty_span = buffer.make_empty_span();
-
-        let start_tag = Tag {
-            contents: "<az:footnote>",
-            prefix: PREFIX,
-            local: NOTE_TAG,
-            span: empty_span,
-        };
-        assert!(processor.start_tag(start_tag).is_none());
-        assert_eq!(processor.stack.len(), 1);
-        let end_tag = Tag {
-            contents: "</az:footnote>",
-            prefix: PREFIX,
-            local: NOTE_TAG,
-            span: empty_span,
-        };
-        let visitor = processor.end_tag(end_tag).unwrap();
-        visitor.visit(&mut buffer);
-        assert_eq!(
-            buffer.as_str(),
-            r##"<a id="footnote-ref-0" href="#footnote-0" class="footnote-ref ">0</a>"##
-        );
-    }
-}

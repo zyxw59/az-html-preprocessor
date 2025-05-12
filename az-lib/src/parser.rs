@@ -209,17 +209,8 @@ impl Buffer {
         Some((self.spans.insert(outer), self.spans.insert(inner)))
     }
 
-    pub fn as_str(&self) -> &str {
-        self.buffer.as_str()
-    }
-
     fn len(&self) -> usize {
         self.buffer.len()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn make_empty_span(&mut self) -> SpanRef {
-        self.spans.insert(Span { start: 0, end: 0 })
     }
 }
 
