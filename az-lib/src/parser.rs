@@ -7,9 +7,6 @@ slotmap::new_key_type! {
     pub struct SpanRef;
 }
 
-pub mod footnote;
-pub mod highlighting;
-
 pub const PREFIX: &str = "az";
 
 /// Tags that do not necessarily contain valid HTML (such as unescaped `>`)
@@ -212,8 +209,17 @@ impl Buffer {
         Some((self.spans.insert(outer), self.spans.insert(inner)))
     }
 
+    pub fn as_str(&self) -> &str {
+        self.buffer.as_str()
+    }
+
     fn len(&self) -> usize {
         self.buffer.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn make_empty_span(&mut self) -> SpanRef {
+        self.spans.insert(Span { start: 0, end: 0 })
     }
 }
 
@@ -310,8 +316,8 @@ mod tests {
     }
 
     fn test_files([input, expected]: [&str; 2]) {
-        let footnote_processor = Box::new(super::footnote::FootnoteProcessor::new());
-        let code_processor = Box::new(super::highlighting::HighlightProcessor::new_test());
+        let footnote_processor = Box::new(crate::footnote::FootnoteProcessor::new());
+        let code_processor = Box::new(crate::highlighting::HighlightProcessor::new_test());
         let mut driver = super::ProcessorDriver::new(vec![footnote_processor, code_processor]);
         driver.parse(input).unwrap();
         let actual = driver.finish();

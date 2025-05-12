@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, fmt, rc::Rc};
 
 use htmlparser::Token;
 
-use super::{Buffer, PREFIX, Processor, SpanRef, Tag, Visitor};
+use crate::parser::{Buffer, PREFIX, Processor, SpanRef, Tag, Visitor};
 
 const NOTE_TAG: &str = "footnote";
 const REF_TAG: &str = "footnote-ref";
@@ -280,17 +280,14 @@ impl fmt::Display for FootnoteRef {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        super::{Buffer, PREFIX, Processor, Span, Tag},
-        FootnoteProcessor, NOTE_TAG,
-    };
+    use super::{FootnoteProcessor, NOTE_TAG};
+    use crate::parser::{Buffer, PREFIX, Processor, Tag};
 
     #[test]
     fn awawa() {
-        const EMPTY_SPAN: Span = Span { start: 0, end: 0 };
         let mut buffer = Buffer::default();
         let mut processor = FootnoteProcessor::new();
-        let empty_span = buffer.spans.insert(EMPTY_SPAN);
+        let empty_span = buffer.make_empty_span();
 
         let start_tag = Tag {
             contents: "<az:footnote>",
@@ -309,7 +306,7 @@ mod tests {
         let visitor = processor.end_tag(end_tag).unwrap();
         visitor.visit(&mut buffer);
         assert_eq!(
-            buffer.buffer,
+            buffer.as_str(),
             r##"<a id="footnote-ref-0" href="#footnote-0" class="footnote-ref ">0</a>"##
         );
     }

@@ -4,7 +4,7 @@ use htmlparser::Token;
 use itertools::Itertools;
 use tree_sitter_highlight::{Highlight, HighlightConfiguration, HighlightEvent, Highlighter};
 
-use super::{Buffer, Processor, SpanRef, Tag, Visitor};
+use crate::parser::{Buffer, Processor, SpanRef, Tag, Visitor};
 
 const CODE_TAG: &str = "code";
 
