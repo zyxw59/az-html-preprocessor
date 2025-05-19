@@ -41,12 +41,12 @@ impl RangeBounds<usize> for Span {
     }
 }
 
-pub struct ProcessorDriver {
+pub struct ProcessorDriver<'a> {
     output: Buffer,
-    processors: Vec<Box<dyn Processor>>,
+    processors: Vec<Box<dyn Processor + 'a>>,
 }
 
-impl ProcessorDriver {
+impl ProcessorDriver<'_> {
     pub fn new(processors: Vec<Box<dyn Processor>>) -> Self {
         Self {
             processors,
@@ -99,8 +99,8 @@ impl ProcessorDriver {
             }
         }
 
-        type ProcessorFn =
-            for<'p> fn(&'p mut (dyn Processor + 'static), Tag<'_>) -> Option<Box<dyn Visitor + 'p>>;
+        type ProcessorFn<'a> =
+            for<'p> fn(&'p mut (dyn Processor + 'a), Tag<'_>) -> Option<Box<dyn Visitor + 'p>>;
 
         let mut tokens = htmlparser::Tokenizer::from_fragment(input, 0..input.len());
         let mut last = 0;
