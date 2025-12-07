@@ -172,7 +172,7 @@ pub type Error = htmlparser::Error;
 #[derive(Clone, Default, Debug)]
 pub struct Buffer {
     buffer: String,
-    spans: slotmap::HopSlotMap<SpanRef, Span>,
+    spans: slotmap::SlotMap<SpanRef, Span>,
 }
 
 impl Buffer {
