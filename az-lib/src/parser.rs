@@ -149,8 +149,11 @@ impl ProcessorDriver<'_> {
             });
             if skip_to_end_tag {
                 let end_tag = format!("</{}>", start_tag.local);
-                if let Some(end_position) = input.find(&end_tag) {
-                    tokens = htmlparser::Tokenizer::from_fragment(input, end_position..input.len());
+                if let Some(end_position) = input[last..].find(&end_tag) {
+                    tokens = htmlparser::Tokenizer::from_fragment(
+                        input,
+                        last + end_position..input.len(),
+                    );
                 }
             }
         }
