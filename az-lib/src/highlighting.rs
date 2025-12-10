@@ -76,14 +76,14 @@ impl Processor for HighlightProcessor {
         // skip the start tag token
         tokens.next();
         while let Some(Ok(Token::Attribute { local, value, .. })) = tokens.next() {
-            if local == "data-lang" {
-                if let Some(value) = value {
-                    self.stack.push(Pending {
-                        start_span: tag.span,
-                        lang: value.as_str().into(),
-                    });
-                    break;
-                }
+            if local == "data-lang"
+                && let Some(value) = value
+            {
+                self.stack.push(Pending {
+                    start_span: tag.span,
+                    lang: value.as_str().into(),
+                });
+                break;
             }
         }
         // this processor doesn't modify output on start tags
