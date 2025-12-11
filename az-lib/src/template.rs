@@ -12,6 +12,22 @@ pub struct TemplateProcessor {
     stack: Vec<Rc<str>>,
 }
 
+impl TemplateProcessor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_template(
+        &mut self,
+        name: impl Into<Box<str>>,
+        pre: impl Into<Rc<str>>,
+        post: impl Into<Rc<str>>,
+    ) -> Option<(Rc<str>, Rc<str>)> {
+        self.templates
+            .insert(name.into(), (pre.into(), post.into()))
+    }
+}
+
 impl Processor for TemplateProcessor {
     fn start_tag(&mut self, tag: Tag) -> Option<Box<dyn Visitor + '_>> {
         if tag.prefix != PREFIX || tag.local != TEMPLATE_TAG {

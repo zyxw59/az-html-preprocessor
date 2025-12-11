@@ -106,7 +106,7 @@ impl ProcessorDriver<'_> {
         let mut input_stack = vec![(input, 0)];
 
         'outer: while let Some((input, mut last)) = input_stack.pop() {
-            let mut tokens = htmlparser::Tokenizer::from_fragment(&input, 0..input.len());
+            let mut tokens = htmlparser::Tokenizer::from_fragment(&input, last..input.len());
             while let Some(start_tag) = find_map_token(&mut tokens, StartTag::new)? {
                 let input_start = start_tag.span.start();
                 self.output.buffer.push_str(&input[last..input_start]);
@@ -329,9 +329,22 @@ mod tests {
     }
 
     fn test_files([input, expected]: [&str; 2]) {
+        let template_processor = {
+            let mut templates = crate::template::TemplateProcessor::new();
+            templates.add_template(
+                "default",
+                "<html><body><az:footnote>added by template</az:footnote>",
+                "</body></html>",
+            );
+            Box::new(templates)
+        };
         let footnote_processor = Box::new(crate::footnote::FootnoteProcessor::new());
         let code_processor = Box::new(crate::highlighting::HighlightProcessor::new_test());
-        let mut driver = super::ProcessorDriver::new(vec![footnote_processor, code_processor]);
+        let mut driver = super::ProcessorDriver::new(vec![
+            footnote_processor,
+            code_processor,
+            template_processor,
+        ]);
         driver.parse(input.into()).unwrap();
         let actual = driver.finish();
         pretty_assertions::assert_eq!(actual.buffer, expected);
