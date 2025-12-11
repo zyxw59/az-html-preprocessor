@@ -1,0 +1,5 @@
+<az:template name="default">
+Some text<az:footnote>here is a footnote</az:footnote>.
+The following footnote is just a reference, the body of that footnote is defined elsewhere<az:footnote-ref name="foo" />.
+It's defined here<az:footnote name="foo">and here is the text of that footnote</az:footnote>.
+</az:template>

@@ -32,14 +32,14 @@ impl Processor for MetadataProcessor<'_> {
         // skip the start tag token
         tokens.next();
         while let Some(Ok(Token::Attribute { local, value, .. })) = tokens.next() {
-            if local == "key" {
-                if let Some(value) = value {
-                    self.stack.push(Pending {
-                        opening_span: tag.span,
-                        key: value.as_str().into(),
-                    });
-                    break;
-                }
+            if local == "key"
+                && let Some(value) = value
+            {
+                self.stack.push(Pending {
+                    opening_span: tag.span,
+                    key: value.as_str().into(),
+                });
+                break;
             }
         }
         // this processor doesn't modify output on start tags

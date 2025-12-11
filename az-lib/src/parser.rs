@@ -1,6 +1,7 @@
 use std::{
     fmt,
     ops::{self, RangeBounds},
+    rc::Rc,
 };
 
 slotmap::new_key_type! {
@@ -54,7 +55,7 @@ impl ProcessorDriver<'_> {
         }
     }
 
-    pub fn parse(&mut self, input: &str) -> Result<(), Error> {
+    pub fn parse(&mut self, input: Rc<str>) -> Result<(), Error> {
         use htmlparser::{ElementEnd, StrSpan, Token, Tokenizer};
         fn find_map_token<'t, T>(
             tokens: &mut Tokenizer<'t>,
@@ -102,59 +103,76 @@ impl ProcessorDriver<'_> {
         type ProcessorFn<'a> =
             for<'p> fn(&'p mut (dyn Processor + 'a), Tag<'_>) -> Option<Box<dyn Visitor + 'p>>;
 
-        let mut tokens = htmlparser::Tokenizer::from_fragment(input, 0..input.len());
-        let mut last = 0;
+        let mut input_stack = vec![(input, 0)];
 
-        while let Some(start_tag) = find_map_token(&mut tokens, StartTag::new)? {
-            let input_start = start_tag.span.start();
-            self.output.buffer.push_str(&input[last..input_start]);
-            let mut skip_to_end_tag = false;
-            let (input_end, filter): (_, ProcessorFn) = if start_tag.is_closed {
-                (start_tag.span.end(), Processor::end_tag)
-            } else {
-                find_map_token::<(_, ProcessorFn)>(&mut tokens, |tok| match tok {
-                    Token::ElementEnd {
-                        end: ElementEnd::Open,
-                        span,
-                    } => {
-                        skip_to_end_tag = start_tag.prefix.is_empty()
-                            && NON_HTML_TAGS.contains(&start_tag.local.as_str());
-                        Some((span.end(), Processor::start_tag))
+        'outer: while let Some((input, mut last)) = input_stack.pop() {
+            let mut tokens = htmlparser::Tokenizer::from_fragment(&input, last..input.len());
+            while let Some(start_tag) = find_map_token(&mut tokens, StartTag::new)? {
+                let input_start = start_tag.span.start();
+                self.output.buffer.push_str(&input[last..input_start]);
+                let mut skip_to_end_tag = false;
+                let (input_end, filter): (_, ProcessorFn) = if start_tag.is_closed {
+                    (start_tag.span.end(), Processor::end_tag)
+                } else {
+                    find_map_token::<(_, ProcessorFn)>(&mut tokens, |tok| match tok {
+                        Token::ElementEnd {
+                            end: ElementEnd::Open,
+                            span,
+                        } => {
+                            skip_to_end_tag = start_tag.prefix.is_empty()
+                                && NON_HTML_TAGS.contains(&start_tag.local.as_str());
+                            Some((span.end(), Processor::start_tag))
+                        }
+                        Token::ElementEnd {
+                            end: ElementEnd::Empty,
+                            span,
+                        } => Some((span.end(), Processor::empty_tag)),
+                        _ => None,
+                    })?
+                    .expect("TODO: return an error for no element end")
+                };
+                let start = self.output.len();
+                self.output.buffer.push_str(&input[input_start..input_end]);
+                let end = self.output.len();
+                last = input_end;
+                let span = Span { start, end };
+                let span_ref = self.output.spans.insert(span);
+                if let Some(new_input) = self
+                    .processors
+                    .iter_mut()
+                    .find_map(|p| {
+                        filter(
+                            &mut **p,
+                            Tag {
+                                contents: &self.output[span],
+                                prefix: &start_tag.prefix,
+                                local: &start_tag.local,
+                                span: span_ref,
+                            },
+                        )
+                    })
+                    .and_then(|v| {
+                        let input = v.add_input();
+                        v.visit(&mut self.output);
+                        input
+                    })
+                {
+                    input_stack.push((input, last));
+                    input_stack.push((new_input, 0));
+                    continue 'outer;
+                };
+                if skip_to_end_tag {
+                    let end_tag = format!("</{}>", start_tag.local);
+                    if let Some(end_position) = input[last..].find(&end_tag) {
+                        tokens = htmlparser::Tokenizer::from_fragment(
+                            &input,
+                            last + end_position..input.len(),
+                        );
                     }
-                    Token::ElementEnd {
-                        end: ElementEnd::Empty,
-                        span,
-                    } => Some((span.end(), Processor::empty_tag)),
-                    _ => None,
-                })?
-                .expect("TODO: return an error for no element end")
-            };
-            let start = self.output.len();
-            self.output.buffer.push_str(&input[input_start..input_end]);
-            let end = self.output.len();
-            last = input_end;
-            let span = Span { start, end };
-            let span_ref = self.output.spans.insert(span);
-            self.processors.iter_mut().find_map(|p| {
-                filter(
-                    &mut **p,
-                    Tag {
-                        contents: &self.output[span],
-                        prefix: &start_tag.prefix,
-                        local: &start_tag.local,
-                        span: span_ref,
-                    },
-                )
-                .map(|v| v.visit(&mut self.output))
-            });
-            if skip_to_end_tag {
-                let end_tag = format!("</{}>", start_tag.local);
-                if let Some(end_position) = input.find(&end_tag) {
-                    tokens = htmlparser::Tokenizer::from_fragment(input, end_position..input.len());
                 }
             }
+            self.output.buffer.push_str(&input[last..]);
         }
-        self.output.buffer.push_str(&input[last..]);
         Ok(())
     }
 
@@ -280,6 +298,10 @@ impl fmt::Write for InsertWriter<'_> {
 
 pub trait Visitor {
     fn visit(self: Box<Self>, output: &mut Buffer);
+
+    fn add_input(&self) -> Option<Rc<str>> {
+        None
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -307,10 +329,23 @@ mod tests {
     }
 
     fn test_files([input, expected]: [&str; 2]) {
+        let template_processor = {
+            let mut templates = crate::template::TemplateProcessor::new();
+            templates.add_template(
+                "default",
+                "<html><body><az:footnote>added by template</az:footnote>",
+                "</body></html>",
+            );
+            Box::new(templates)
+        };
         let footnote_processor = Box::new(crate::footnote::FootnoteProcessor::new());
         let code_processor = Box::new(crate::highlighting::HighlightProcessor::new_test());
-        let mut driver = super::ProcessorDriver::new(vec![footnote_processor, code_processor]);
-        driver.parse(input).unwrap();
+        let mut driver = super::ProcessorDriver::new(vec![
+            footnote_processor,
+            code_processor,
+            template_processor,
+        ]);
+        driver.parse(input.into()).unwrap();
         let actual = driver.finish();
         pretty_assertions::assert_eq!(actual.buffer, expected);
     }
